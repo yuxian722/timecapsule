@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>時光膠卷・精選集</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#1a1208;color:#F4ECDD;font-family:"PingFang TC","Microsoft JhengHei",sans-serif;min-height:100vh}
+header{background:#2d2010;padding:16px;text-align:center;border-bottom:1px solid #4a3520}
+header h1{font-size:20px;letter-spacing:2px;color:#F4ECDD}
+header p{font-size:11px;color:#8a7c64;margin-top:4px}
+.tabs{display:flex;background:#2d2010;border-bottom:1px solid #4a3520}
+.tab{flex:1;padding:12px;text-align:center;font-size:13px;cursor:pointer;color:#8a7c64;border:none;background:none;transition:.2s}
+.tab.active{color:#F4ECDD;border-bottom:2px solid #E8943A}
+.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:2px;padding:2px}
+.cell{aspect-ratio:1;overflow:hidden;cursor:pointer;background:#2d2010}
+.cell img{width:100%;height:100%;object-fit:cover;display:block;transition:transform .3s}
+.cell:hover img,.cell:active img{transform:scale(1.05)}
+.empty{text-align:center;padding:60px 20px;color:#8a7c64;font-size:13px}
+#lb{display:none;position:fixed;inset:0;background:rgba(0,0,0,.95);z-index:100;align-items:center;justify-content:center;flex-direction:column}
+#lb.show{display:flex}
+#lb img{max-width:100%;max-height:85vh;object-fit:contain}
+#lbCaption{color:#F4ECDD;font-size:12px;margin-top:10px;text-align:center}
+#lbClose{position:absolute;top:14px;right:14px;background:rgba(255,255,255,.2);border:none;color:#fff;font-size:20px;width:38px;height:38px;border-radius:50%;cursor:pointer}
+.upd{position:fixed;bottom:14px;right:14px;font-size:10px;color:#4a3520;background:#2d2010;padding:4px 8px;border-radius:6px}
+</style>
+</head>
+<body>
+<header>
+  <h1>📷 時光膠卷・精選集</h1>
+  <p id="updTime">載入中...</p>
+</header>
+<div class="tabs">
+  <button class="tab active" onclick="showCat('姊姊',this)">👧 姊姊</button>
+  <button class="tab" onclick="showCat('妹妹',this)">👧 妹妹</button>
+  <button class="tab" onclick="showCat('全家',this)">👨‍👩‍👧‍👧 全家</button>
+</div>
+<div class="grid" id="grid"></div>
+<div id="lb">
+  <button id="lbClose" onclick="document.getElementById('lb').classList.remove('show')">✕</button>
+  <img id="lbImg" src="" alt="">
+  <div id="lbCaption"></div>
+</div>
+<script>
+var M={};var cur='姊姊';
+fetch('./manifest.json?t='+Date.now()).then(r=>r.json()).then(m=>{
+  M=m;
+  document.getElementById('updTime').textContent='最後更新：'+m.updated;
+  showCat('姊姊',document.querySelector('.tab'));
+}).catch(()=>{document.getElementById('grid').innerHTML='<div class="empty">尚未同步照片</div>';});
+function showCat(cat,btn){
+  cur=cat;
+  document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+  if(btn)btn.classList.add('active');
+  var items=(M.categories&&M.categories[cat])||[];
+  var g=document.getElementById('grid');
+  if(!items.length){g.innerHTML='<div class="empty">尚無 '+cat+' 的精選照片</div>';return;}
+  g.innerHTML=items.map(function(it,i){return '<div class="cell" onclick="openLB('+i+',''+cat+'')"><img src="./photos/'+it.file+'" loading="lazy" alt="'+(it.title||'')+'">' + '</div>';}).join('');
+}
+function openLB(i,cat){
+  var items=(M.categories&&M.categories[cat])||[];
+  var it=items[i];if(!it)return;
+  document.getElementById('lbImg').src='./photos/'+it.file;
+  document.getElementById('lbCaption').textContent=(it.date||'')+(it.title?' · '+it.title:'');
+  document.getElementById('lb').classList.add('show');
+}
+document.getElementById('lb').addEventListener('click',function(e){if(e.target===this)this.classList.remove('show');});
+</script>
+</body>
+</html>

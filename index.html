@@ -85,7 +85,7 @@ function showCat(cat,btn){
   g.innerHTML=items.map(function(it,i){
     var capText=(it.date||'')+(it.title?' · '+it.title:'');
     return '<div class="cell" onclick="openLB('+i+')">'
-      +'<img src="./photos/'+it.file+'" loading="lazy" alt="'+(it.title||'')+'" onload="this.classList.add('loaded')">'
+      +'<img src="./photos/'+it.file+'" loading="lazy" alt="'+(it.title||'')+'" onload="this.style.opacity=1" style="opacity:0;transition:opacity .4s">'+
       +(capText?'<div class="cap">'+capText+'</div>':'')
       +'</div>';
   }).join('');

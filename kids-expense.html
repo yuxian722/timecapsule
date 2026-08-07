@@ -1,0 +1,641 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>子女支出記帳本</title>
+<style>
+  :root{
+    --ink:#1c2b2e;
+    --paper:#f4f0e6;
+    --line:#c9c0aa;
+    --stamp:#a13d2f;
+    --mint:#3f6b5e;
+    --mint-deep:#2a4a41;
+    --gold:#b8863b;
+    --owe:#a13d2f;
+    --owed:#3f6b5e;
+    --card:#fffdf7;
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
+  html,body{margin:0;padding:0;background:var(--ink);}
+  body{
+    font-family:-apple-system,"PingFang TC","Noto Sans TC",sans-serif;
+    color:var(--ink);
+    min-height:100vh;
+    padding-bottom:40px;
+  }
+  .sheet{
+    max-width:520px;
+    margin:0 auto;
+    background:var(--paper);
+    min-height:100vh;
+    position:relative;
+  }
+  .sheet::before{
+    content:"";
+    position:absolute; top:0; left:0; bottom:0; width:14px;
+    background-image: radial-gradient(circle at 7px 12px, var(--ink) 4px, transparent 4.5px);
+    background-size: 14px 24px;
+    background-repeat: repeat-y;
+    opacity:.15;
+  }
+  header{
+    padding:28px 22px 20px 34px;
+    border-bottom:2px solid var(--line);
+  }
+  header .eyebrow{
+    font-size:11px; letter-spacing:.2em; text-transform:uppercase;
+    color:var(--mint-deep); opacity:.7; font-weight:600;
+  }
+  header h1{
+    margin:4px 0 2px; font-size:26px; font-weight:800;
+    color:var(--mint-deep); letter-spacing:.02em;
+  }
+  header .sub{ font-size:12.5px; color:var(--ink); opacity:.55; }
+
+  .setup-wrap{ padding:24px 22px 40px 34px; }
+  .setup-card{
+    background:var(--card); border:1px solid var(--line); border-radius:12px;
+    padding:22px; margin-bottom:16px;
+  }
+  .setup-card h3{ margin:0 0 6px; font-size:16px; color:var(--mint-deep); }
+  .setup-card p{ margin:0 0 14px; font-size:13px; opacity:.65; line-height:1.6; }
+  .setup-card input{
+    width:100%; padding:11px 12px; border:1px solid var(--line); border-radius:8px;
+    font-size:15px; margin-bottom:10px; background:#fff; font-family:inherit;
+  }
+  .setup-card button{
+    width:100%; padding:12px; border:none; border-radius:8px;
+    background:var(--mint-deep); color:#fff; font-size:14.5px; font-weight:700; cursor:pointer;
+  }
+  .setup-card button.secondary{ background:#fff; color:var(--mint-deep); border:1.5px solid var(--mint-deep); }
+  .setup-divider{ text-align:center; font-size:11px; opacity:.4; margin:16px 0; }
+  .setup-status{ font-size:12.5px; margin-top:10px; min-height:16px; }
+  .setup-status.err{ color:var(--stamp); }
+  .setup-status.ok{ color:var(--mint); }
+
+  .balance-card{
+    margin:18px 18px 0 34px;
+    background:var(--card);
+    border:1px solid var(--line);
+    border-radius:10px;
+    padding:16px 18px;
+    box-shadow:0 1px 0 rgba(0,0,0,.04);
+    position:relative;
+  }
+  .balance-card .stamp{
+    position:absolute; top:12px; right:14px;
+    font-size:10px; letter-spacing:.1em; color:var(--stamp);
+    border:1.5px solid var(--stamp); border-radius:4px;
+    padding:2px 6px; transform:rotate(-6deg); opacity:.7;
+    font-weight:700;
+  }
+  .balance-card .label{ font-size:12px; color:var(--ink); opacity:.55; margin-bottom:6px;}
+  .balance-card .amount{ font-size:30px; font-weight:800; font-variant-numeric:tabular-nums;}
+  .balance-card .amount.owed{ color:var(--owed); }
+  .balance-card .amount.owe{ color:var(--owe); }
+  .balance-card .amount.even{ color:var(--ink); opacity:.5;}
+  .balance-card .who{ font-size:12.5px; margin-top:2px; opacity:.7;}
+  .ratio-line{
+    display:flex; gap:10px; margin-top:12px; align-items:center; font-size:12px; opacity:.75;
+  }
+  .ratio-line input{
+    width:46px; padding:4px 6px; border:1px solid var(--line); border-radius:6px;
+    font-size:12px; text-align:center; background:#fff;
+  }
+
+  .sync-bar{
+    margin:12px 18px 0 34px; display:flex; gap:8px; align-items:center;
+    font-size:11.5px; opacity:.6;
+  }
+  .sync-bar button{
+    border:1px solid var(--line); background:#fff; border-radius:7px; padding:6px 10px;
+    font-size:11.5px; cursor:pointer; color:var(--ink);
+  }
+  .sync-dot{ width:7px; height:7px; border-radius:50%; background:var(--mint); flex-shrink:0; }
+  .sync-dot.syncing{ background:var(--gold); animation:pulse 1s infinite; }
+  .sync-dot.error{ background:var(--stamp); }
+  @keyframes pulse{ 50%{opacity:.3;} }
+
+  section{ padding:18px 18px 0 34px; }
+  h2{
+    font-size:13px; letter-spacing:.08em; text-transform:uppercase;
+    color:var(--mint-deep); opacity:.8; margin:0 0 10px; font-weight:700;
+  }
+
+  form.entry{
+    background:var(--card); border:1px solid var(--line); border-radius:10px;
+    padding:16px; display:grid; gap:10px;
+  }
+  .row2{ display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+  label{ font-size:11px; opacity:.6; display:block; margin-bottom:3px; }
+  input,select{
+    width:100%; padding:9px 10px; border:1px solid var(--line); border-radius:7px;
+    font-size:14.5px; background:#fff; color:var(--ink); font-family:inherit;
+  }
+  input:focus,select:focus{ outline:2px solid var(--mint); outline-offset:1px; }
+  .chip-row{ display:flex; gap:8px; flex-wrap:wrap; }
+  .chip{
+    padding:6px 12px; border:1px solid var(--line); border-radius:999px;
+    font-size:12.5px; background:#fff; cursor:pointer; user-select:none;
+  }
+  .chip.active{ background:var(--mint-deep); color:#fff; border-color:var(--mint-deep); }
+  button.submit{
+    margin-top:4px; padding:12px; border:none; border-radius:8px;
+    background:var(--mint-deep); color:#fff; font-size:15px; font-weight:700;
+    cursor:pointer;
+  }
+  button.submit:active{ opacity:.85; }
+  button.submit:disabled{ opacity:.5; }
+
+  .filters{ display:flex; gap:8px; margin-bottom:10px; }
+  .filters select{ font-size:13px; padding:7px 8px; }
+
+  .ledger{ display:flex; flex-direction:column; gap:0; }
+  .ledger-row{
+    display:grid; grid-template-columns: 54px 1fr auto;
+    gap:10px; align-items:center;
+    padding:12px 4px; border-bottom:1px dashed var(--line);
+  }
+  .ledger-row .date{ font-size:11px; opacity:.55; line-height:1.3; }
+  .ledger-row .who-badge{
+    display:inline-block; font-size:10px; padding:1px 6px; border-radius:4px;
+    background:var(--mint); color:#fff; margin-right:6px; opacity:.85;
+  }
+  .ledger-row .desc{ font-size:14px; font-weight:600; }
+  .ledger-row .cat{ font-size:11.5px; opacity:.55; margin-top:1px;}
+  .ledger-row .amt{ font-size:15px; font-weight:700; font-variant-numeric:tabular-nums; text-align:right;}
+  .ledger-row .payer{ font-size:10.5px; opacity:.5; text-align:right; margin-top:2px;}
+  .ledger-row .del{
+    background:none; border:none; color:var(--stamp); font-size:11px; opacity:.5;
+    padding:2px 4px; cursor:pointer;
+  }
+  .empty{ text-align:center; padding:30px 10px; opacity:.45; font-size:13px; }
+
+  .summary-cards{ display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:16px; }
+  .sum-card{
+    background:var(--card); border:1px solid var(--line); border-radius:10px; padding:12px 14px;
+  }
+  .sum-card .k{ font-size:11px; opacity:.55; }
+  .sum-card .v{ font-size:19px; font-weight:800; margin-top:2px; font-variant-numeric:tabular-nums;}
+
+  .cat-bars{ background:var(--card); border:1px solid var(--line); border-radius:10px; padding:16px; margin-bottom:16px;}
+  .cat-bar{ margin-bottom:10px; }
+  .cat-bar:last-child{ margin-bottom:0; }
+  .cat-bar .top{ display:flex; justify-content:space-between; font-size:12px; margin-bottom:4px; }
+  .cat-bar .track{ height:8px; background:#e9e2cf; border-radius:4px; overflow:hidden; }
+  .cat-bar .fill{ height:100%; background:var(--mint); border-radius:4px; }
+
+  .share-box{
+    background:var(--card); border:1px solid var(--line); border-radius:10px;
+    padding:14px 16px; margin:0 18px 18px 34px; font-size:12.5px;
+  }
+  .share-box .code{
+    font-size:20px; font-weight:800; letter-spacing:.1em; color:var(--mint-deep);
+    margin:6px 0; font-variant-numeric:tabular-nums;
+  }
+  .share-box button{
+    border:1px solid var(--mint-deep); background:#fff; color:var(--mint-deep);
+    border-radius:7px; padding:8px 14px; font-size:12.5px; cursor:pointer; font-weight:600;
+  }
+
+  footer{ padding:20px 18px 30px 34px; font-size:11px; opacity:.4; text-align:center; }
+  .hidden{ display:none !important; }
+
+  @media (prefers-reduced-motion: no-preference){
+    .ledger-row{ animation: slideIn .25s ease; }
+    @keyframes slideIn{ from{opacity:0; transform:translateY(4px);} to{opacity:1; transform:none;} }
+  }
+</style>
+</head>
+<body>
+<div class="sheet">
+  <header>
+    <div class="eyebrow">家庭 · 共同支出</div>
+    <h1>子女支出記帳本</h1>
+    <div class="sub">即時記錄 · 自動分帳 · 雙方共用</div>
+  </header>
+
+  <div class="setup-wrap" id="setupScreen">
+    <div class="setup-card">
+      <h3>第一次使用</h3>
+      <p>建立一本新的共用帳本，建立後會給你一組代碼，傳給對方即可一起記帳。</p>
+      <button id="btnCreate">建立新帳本</button>
+    </div>
+    <div class="setup-divider">— 或者 —</div>
+    <div class="setup-card">
+      <h3>加入對方的帳本</h3>
+      <p>如果對方已經建立好帳本，把對方傳給你的代碼貼在下面。</p>
+      <input type="text" id="joinCode" placeholder="貼上帳本代碼">
+      <button id="btnJoin" class="secondary">加入帳本</button>
+    </div>
+    <div class="setup-status" id="setupStatus"></div>
+  </div>
+
+  <div id="appScreen" class="hidden">
+
+    <div class="balance-card">
+      <div class="stamp">帳目核對</div>
+      <div class="label" id="balanceLabel">結算</div>
+      <div class="amount even" id="balanceAmount">NT$ 0</div>
+      <div class="who" id="balanceWho">目前收支平衡</div>
+      <div class="ratio-line">
+        分攤比例 你
+        <input type="number" id="ratioMe" value="2" min="0" max="10" step="1">
+        ：對方
+        <input type="number" id="ratioOther" value="1" min="0" max="10" step="1">
+      </div>
+    </div>
+
+    <div class="sync-bar">
+      <div class="sync-dot" id="syncDot"></div>
+      <span id="syncText">已同步</span>
+      <button id="btnRefresh">重新整理</button>
+    </div>
+
+    <section>
+      <h2>新增支出</h2>
+      <form class="entry" id="entryForm">
+        <div class="row2">
+          <div>
+            <label>日期</label>
+            <input type="date" id="fDate" required>
+          </div>
+          <div>
+            <label>金額 (NT$)</label>
+            <input type="number" id="fAmount" inputmode="numeric" placeholder="0" required>
+          </div>
+        </div>
+
+        <div>
+          <label>孩子</label>
+          <div class="chip-row" id="kidChips">
+            <div class="chip active" data-val="喬安">喬安</div>
+            <div class="chip" data-val="依宸">依宸</div>
+            <div class="chip" data-val="共同">共同</div>
+          </div>
+        </div>
+
+        <div>
+          <label>類別</label>
+          <select id="fCategory">
+            <option>住音補習班</option>
+            <option>大樹安親班</option>
+            <option>才藝班</option>
+            <option>健保費用</option>
+            <option>保險費用</option>
+            <option>醫療費用</option>
+            <option>電話費用</option>
+            <option>肯塔基</option>
+            <option>其他費用</option>
+          </select>
+        </div>
+
+        <div>
+          <label>備註（選填）</label>
+          <input type="text" id="fNote" placeholder="例如：3月份費用">
+        </div>
+
+        <div>
+          <label>由誰先付</label>
+          <div class="chip-row" id="payerChips">
+            <div class="chip active" data-val="me">你</div>
+            <div class="chip" data-val="other">對方</div>
+          </div>
+        </div>
+
+        <button type="submit" class="submit" id="btnSubmit">記一筆</button>
+      </form>
+    </section>
+
+    <section>
+      <h2>本月概況</h2>
+      <div class="summary-cards">
+        <div class="sum-card">
+          <div class="k">本月總支出</div>
+          <div class="v" id="sumMonthTotal">NT$ 0</div>
+        </div>
+        <div class="sum-card">
+          <div class="k">筆數</div>
+          <div class="v" id="sumMonthCount">0</div>
+        </div>
+      </div>
+
+      <div class="cat-bars" id="catBars"></div>
+    </section>
+
+    <section>
+      <h2>明細</h2>
+      <div class="filters">
+        <select id="filterMonth"></select>
+        <select id="filterKid">
+          <option value="all">全部孩子</option>
+          <option value="喬安">喬安</option>
+          <option value="依宸">依宸</option>
+          <option value="共同">共同</option>
+        </select>
+      </div>
+      <div class="ledger" id="ledger"></div>
+    </section>
+
+    <div class="share-box">
+      <div>帳本代碼（傳給對方即可一起使用）</div>
+      <div class="code" id="ledgerCodeDisplay">------</div>
+      <button id="btnCopyCode">複製代碼</button>
+    </div>
+
+  </div>
+
+  <footer>資料儲存於雲端，雙方輸入相同代碼即可共用同一份紀錄</footer>
+</div>
+
+<script>
+const API = 'https://jsonblob.com/api/jsonBlob';
+let ledgerId = null;
+let data = { settings: { ratioMe: 2, ratioOther: 1 }, expenses: [] };
+let selectedKid = '喬安';
+let selectedPayer = 'me';
+
+const $ = id => document.getElementById(id);
+
+function setSyncState(state){
+  const dot = $('syncDot'); const text = $('syncText');
+  dot.className = 'sync-dot' + (state === 'syncing' ? ' syncing' : state === 'error' ? ' error' : '');
+  text.textContent = state === 'syncing' ? '同步中…' : state === 'error' ? '同步失敗，請按重新整理' : '已同步';
+}
+
+async function fetchLedger(id){
+  const res = await fetch(`${API}/${id}`, { headers:{'Accept':'application/json'} });
+  if(!res.ok) throw new Error('找不到這個帳本代碼');
+  return await res.json();
+}
+
+async function pushLedger(){
+  setSyncState('syncing');
+  try{
+    const res = await fetch(`${API}/${ledgerId}`, {
+      method:'PUT',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify(data)
+    });
+    if(!res.ok) throw new Error('save failed');
+    setSyncState('ok');
+  }catch(e){
+    setSyncState('error');
+    console.error(e);
+  }
+}
+
+async function createLedger(){
+  $('setupStatus').textContent = '建立中…';
+  $('setupStatus').className = 'setup-status';
+  try{
+    const res = await fetch(API, {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify(data)
+    });
+    const loc = res.headers.get('Location');
+    if(!loc) throw new Error('no location');
+    ledgerId = loc.split('/').pop();
+    localStorage.setItem('ledgerId', ledgerId);
+    enterApp();
+  }catch(e){
+    $('setupStatus').textContent = '建立失敗：' + (e.message || '未知錯誤') + '（若在Claude預覽視窗內測試，請改用GitHub Pages發布後的網址測試）';
+    $('setupStatus').className = 'setup-status err';
+  }
+}
+
+async function joinLedger(){
+  const code = $('joinCode').value.trim();
+  if(!code){ return; }
+  $('setupStatus').textContent = '加入中…';
+  $('setupStatus').className = 'setup-status';
+  try{
+    const remote = await fetchLedger(code);
+    ledgerId = code;
+    data = remote;
+    localStorage.setItem('ledgerId', ledgerId);
+    enterApp();
+  }catch(e){
+    $('setupStatus').textContent = '找不到這組代碼，請確認是否貼對';
+    $('setupStatus').className = 'setup-status err';
+  }
+}
+
+async function refreshFromServer(){
+  if(!ledgerId) return;
+  setSyncState('syncing');
+  try{
+    const remote = await fetchLedger(ledgerId);
+    data = remote;
+    setSyncState('ok');
+    render();
+  }catch(e){
+    setSyncState('error');
+  }
+}
+
+function enterApp(){
+  $('setupScreen').classList.add('hidden');
+  $('appScreen').classList.remove('hidden');
+  $('ledgerCodeDisplay').textContent = ledgerId;
+  $('ratioMe').value = data.settings.ratioMe;
+  $('ratioOther').value = data.settings.ratioOther;
+  render();
+}
+
+$('btnCreate').addEventListener('click', createLedger);
+$('btnJoin').addEventListener('click', joinLedger);
+$('btnRefresh').addEventListener('click', refreshFromServer);
+$('btnCopyCode').addEventListener('click', ()=>{
+  navigator.clipboard.writeText(ledgerId).then(()=>{
+    const btn = $('btnCopyCode');
+    const orig = btn.textContent;
+    btn.textContent = '已複製！';
+    setTimeout(()=>btn.textContent = orig, 1500);
+  });
+});
+
+(function initLedger(){
+  const params = new URLSearchParams(window.location.search);
+  const urlLedger = params.get('ledger');
+  const savedLedger = localStorage.getItem('ledgerId');
+  const target = urlLedger || savedLedger;
+  if(target){
+    ledgerId = target;
+    setSyncState('syncing');
+    fetchLedger(target).then(remote=>{
+      data = remote;
+      localStorage.setItem('ledgerId', ledgerId);
+      enterApp();
+    }).catch(()=>{
+      localStorage.removeItem('ledgerId');
+      ledgerId = null;
+    });
+  }
+})();
+
+document.addEventListener('visibilitychange', ()=>{
+  if(document.visibilityState === 'visible' && ledgerId) refreshFromServer();
+});
+
+function setupChips(containerId, onPick){
+  const container = $(containerId);
+  container.addEventListener('click', e=>{
+    const chip = e.target.closest('.chip');
+    if(!chip) return;
+    [...container.children].forEach(c=>c.classList.remove('active'));
+    chip.classList.add('active');
+    onPick(chip.dataset.val);
+  });
+}
+setupChips('kidChips', v => selectedKid = v);
+setupChips('payerChips', v => selectedPayer = v);
+
+$('fDate').valueAsDate = new Date();
+
+$('entryForm').addEventListener('submit', async e=>{
+  e.preventDefault();
+  const amount = parseFloat($('fAmount').value);
+  if(!amount || amount <= 0) return;
+  $('btnSubmit').disabled = true;
+  data.expenses.push({
+    id: Date.now().toString(36) + Math.random().toString(36).slice(2,6),
+    date: $('fDate').value,
+    amount,
+    kid: selectedKid,
+    category: $('fCategory').value,
+    note: $('fNote').value.trim(),
+    payer: selectedPayer
+  });
+  await pushLedger();
+  $('btnSubmit').disabled = false;
+  $('fAmount').value = '';
+  $('fNote').value = '';
+  $('fDate').valueAsDate = new Date();
+  render();
+});
+
+$('ratioMe').addEventListener('change', async ()=>{
+  data.settings.ratioMe = parseFloat($('ratioMe').value) || 0;
+  await pushLedger();
+  render();
+});
+$('ratioOther').addEventListener('change', async ()=>{
+  data.settings.ratioOther = parseFloat($('ratioOther').value) || 0;
+  await pushLedger();
+  render();
+});
+
+async function deleteExpense(id){
+  data.expenses = data.expenses.filter(x=>x.id !== id);
+  await pushLedger();
+  render();
+}
+
+function monthKey(dateStr){ return dateStr ? dateStr.slice(0,7) : ''; }
+
+function computeBalance(){
+  const total = data.settings.ratioMe + data.settings.ratioOther;
+  if(total <= 0) return 0;
+  const shareMe = data.settings.ratioMe / total;
+  let net = 0;
+  data.expenses.forEach(x=>{
+    const myShare = x.amount * shareMe;
+    const otherShare = x.amount - myShare;
+    if(x.payer === 'me'){ net += otherShare; }
+    else{ net -= myShare; }
+  });
+  return net;
+}
+
+function populateMonthFilter(){
+  const months = [...new Set(data.expenses.map(x=>monthKey(x.date)))].sort().reverse();
+  const sel = $('filterMonth');
+  const current = sel.value;
+  sel.innerHTML = '<option value="all">全部月份</option>' +
+    months.map(m=>`<option value="${m}">${m}</option>`).join('');
+  if(months.includes(current)) sel.value = current;
+}
+
+function render(){
+  const net = computeBalance();
+  const amtEl = $('balanceAmount');
+  const whoEl = $('balanceWho');
+  const labelEl = $('balanceLabel');
+  const rounded = Math.round(Math.abs(net));
+  if(Math.abs(net) < 1){
+    labelEl.textContent = '結算';
+    amtEl.className = 'amount even';
+    amtEl.textContent = 'NT$ 0';
+    whoEl.textContent = '目前收支平衡';
+  } else if(net > 0){
+    labelEl.textContent = '對方應付你';
+    amtEl.className = 'amount owed';
+    amtEl.textContent = 'NT$ ' + rounded.toLocaleString();
+    whoEl.textContent = '對方目前欠你這個金額';
+  } else {
+    labelEl.textContent = '你應付對方';
+    amtEl.className = 'amount owe';
+    amtEl.textContent = 'NT$ ' + rounded.toLocaleString();
+    whoEl.textContent = '你目前欠對方這個金額';
+  }
+
+  const thisMonth = new Date().toISOString().slice(0,7);
+  const monthExpenses = data.expenses.filter(x=>monthKey(x.date) === thisMonth);
+  const monthTotal = monthExpenses.reduce((s,x)=>s+x.amount,0);
+  $('sumMonthTotal').textContent = 'NT$ ' + Math.round(monthTotal).toLocaleString();
+  $('sumMonthCount').textContent = monthExpenses.length;
+
+  const catTotals = {};
+  monthExpenses.forEach(x=>{ catTotals[x.category] = (catTotals[x.category]||0) + x.amount; });
+  const maxCat = Math.max(1, ...Object.values(catTotals));
+  const catBarsEl = $('catBars');
+  const entries = Object.entries(catTotals).sort((a,b)=>b[1]-a[1]);
+  catBarsEl.innerHTML = entries.length ? entries.map(([cat,val])=>`
+    <div class="cat-bar">
+      <div class="top"><span>${cat}</span><span>NT$ ${Math.round(val).toLocaleString()}</span></div>
+      <div class="track"><div class="fill" style="width:${(val/maxCat*100).toFixed(0)}%"></div></div>
+    </div>
+  `).join('') : '<div class="empty">本月尚無支出紀錄</div>';
+
+  populateMonthFilter();
+  const fMonth = $('filterMonth').value;
+  const fKid = $('filterKid').value;
+  let list = [...data.expenses].sort((a,b)=> b.date.localeCompare(a.date) || b.id.localeCompare(a.id));
+  if(fMonth !== 'all') list = list.filter(x=>monthKey(x.date) === fMonth);
+  if(fKid !== 'all') list = list.filter(x=>x.kid === fKid);
+
+  const ledgerEl = $('ledger');
+  if(list.length === 0){
+    ledgerEl.innerHTML = '<div class="empty">尚無符合條件的紀錄</div>';
+  } else {
+    ledgerEl.innerHTML = list.map(x=>{
+      const d = x.date ? x.date.slice(5).replace('-','/') : '';
+      return `
+      <div class="ledger-row">
+        <div class="date">${d}</div>
+        <div>
+          <div class="desc"><span class="who-badge">${x.kid}</span>${x.note || x.category}</div>
+          <div class="cat">${x.category}</div>
+        </div>
+        <div>
+          <div class="amt">NT$ ${Math.round(x.amount).toLocaleString()}</div>
+          <div class="payer">${x.payer === 'me' ? '你先付' : '對方先付'}</div>
+          <button class="del" data-id="${x.id}">刪除</button>
+        </div>
+      </div>`;
+    }).join('');
+    ledgerEl.querySelectorAll('.del').forEach(btn=>{
+      btn.addEventListener('click', ()=>deleteExpense(btn.dataset.id));
+    });
+  }
+}
+
+$('filterMonth').addEventListener('change', render);
+$('filterKid').addEventListener('change', render);
+</script>
+</body>
+</html>

@@ -279,17 +279,7 @@
 
         <div>
           <label>類別</label>
-          <select id="fCategory">
-            <option>住音補習班</option>
-            <option>大樹安親班</option>
-            <option>才藝班</option>
-            <option>健保費用</option>
-            <option>保險費用</option>
-            <option>醫療費用</option>
-            <option>電話費用</option>
-            <option>肯塔基</option>
-            <option>其他費用</option>
-          </select>
+          <select id="fCategory"></select>
         </div>
 
         <div>
@@ -326,6 +316,27 @@
     </section>
 
     <section>
+      <h2>付款分析</h2>
+      <div class="filters">
+        <select id="filterPayerRange">
+          <option value="month">本月</option>
+          <option value="all">全部時間</option>
+        </select>
+      </div>
+      <div class="summary-cards">
+        <div class="sum-card">
+          <div class="k">你先付</div>
+          <div class="v" id="sumPayerMe">NT$ 0</div>
+        </div>
+        <div class="sum-card">
+          <div class="k">對方先付</div>
+          <div class="v" id="sumPayerOther">NT$ 0</div>
+        </div>
+      </div>
+      <div class="cat-bars" id="payerBars"></div>
+    </section>
+
+    <section>
       <h2>明細</h2>
       <div class="filters">
         <select id="filterMonth"></select>
@@ -352,12 +363,48 @@
 
 <script>
 const API = 'https://jsonblob.com/api/jsonBlob';
+const DEFAULT_CATEGORIES = ['住音補習班','成大補習班','大樹安親班','才藝班','健保費用','保險費用','醫療費用','電話費用','肯塔基','其他費用'];
+const ADD_CATEGORY_VALUE = '__add__';
 let ledgerId = null;
-let data = { settings: { ratioMe: 2, ratioOther: 1 }, expenses: [] };
+let data = { settings: { ratioMe: 2, ratioOther: 1, categories: [...DEFAULT_CATEGORIES] }, expenses: [] };
 let selectedKid = '喬安';
 let selectedPayer = 'me';
 
 const $ = id => document.getElementById(id);
+const escapeHtml = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+// Merge in any missing default/legacy categories so custom additions (and future
+// built-in categories added to DEFAULT_CATEGORIES) survive app updates and reloads.
+function ensureCategories(d){
+  if(!Array.isArray(d.settings.categories)) d.settings.categories = [];
+  let changed = d.settings.categories.length === 0;
+  const has = c => d.settings.categories.includes(c);
+  d.expenses.forEach(x=>{ if(x.category && !has(x.category)){ d.settings.categories.push(x.category); changed = true; } });
+  DEFAULT_CATEGORIES.forEach(c=>{ if(!has(c)){ d.settings.categories.push(c); changed = true; } });
+  return changed;
+}
+
+function populateCategorySelect(selected){
+  const sel = $('fCategory');
+  const cats = data.settings.categories;
+  sel.innerHTML = cats.map(c=>`<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('')
+    + `<option value="${ADD_CATEGORY_VALUE}">➕ 新增類別...</option>`;
+  sel.value = cats.includes(selected) ? selected : cats[0];
+}
+
+$('fCategory').addEventListener('change', async e=>{
+  if(e.target.value !== ADD_CATEGORY_VALUE) return;
+  const name = (prompt('請輸入新的類別名稱') || '').trim();
+  if(name){
+    if(!data.settings.categories.includes(name)){
+      data.settings.categories.push(name);
+      await pushLedger();
+    }
+    populateCategorySelect(name);
+  } else {
+    populateCategorySelect(data.settings.categories[0]);
+  }
+});
 
 function setSyncState(state){
   const dot = $('syncDot'); const text = $('syncText');
@@ -429,9 +476,13 @@ async function refreshFromServer(){
   setSyncState('syncing');
   try{
     const remote = await fetchLedger(ledgerId);
+    const keepCategory = $('fCategory').value;
     data = remote;
+    const categoriesChanged = ensureCategories(data);
+    populateCategorySelect(keepCategory);
     setSyncState('ok');
     render();
+    if(categoriesChanged) pushLedger();
   }catch(e){
     setSyncState('error');
   }
@@ -443,7 +494,10 @@ function enterApp(){
   $('ledgerCodeDisplay').textContent = ledgerId;
   $('ratioMe').value = data.settings.ratioMe;
   $('ratioOther').value = data.settings.ratioOther;
+  const categoriesChanged = ensureCategories(data);
+  populateCategorySelect(data.settings.categories[0]);
   render();
+  if(categoriesChanged) pushLedger();
 }
 
 $('btnCreate').addEventListener('click', createLedger);
@@ -500,6 +554,7 @@ $('entryForm').addEventListener('submit', async e=>{
   e.preventDefault();
   const amount = parseFloat($('fAmount').value);
   if(!amount || amount <= 0) return;
+  if($('fCategory').value === ADD_CATEGORY_VALUE) return;
   $('btnSubmit').disabled = true;
   data.expenses.push({
     id: Date.now().toString(36) + Math.random().toString(36).slice(2,6),
@@ -596,10 +651,33 @@ function render(){
   const entries = Object.entries(catTotals).sort((a,b)=>b[1]-a[1]);
   catBarsEl.innerHTML = entries.length ? entries.map(([cat,val])=>`
     <div class="cat-bar">
-      <div class="top"><span>${cat}</span><span>NT$ ${Math.round(val).toLocaleString()}</span></div>
+      <div class="top"><span>${escapeHtml(cat)}</span><span>NT$ ${Math.round(val).toLocaleString()}</span></div>
       <div class="track"><div class="fill" style="width:${(val/maxCat*100).toFixed(0)}%"></div></div>
     </div>
   `).join('') : '<div class="empty">本月尚無支出紀錄</div>';
+
+  const payerRange = $('filterPayerRange').value;
+  const payerScope = payerRange === 'all' ? data.expenses : monthExpenses;
+  const payerTotals = { me:0, other:0 };
+  payerScope.forEach(x=>{ payerTotals[x.payer] = (payerTotals[x.payer]||0) + x.amount; });
+  $('sumPayerMe').textContent = 'NT$ ' + Math.round(payerTotals.me).toLocaleString();
+  $('sumPayerOther').textContent = 'NT$ ' + Math.round(payerTotals.other).toLocaleString();
+  const maxPayer = Math.max(1, payerTotals.me, payerTotals.other);
+  const payerBarsEl = $('payerBars');
+  if(payerTotals.me === 0 && payerTotals.other === 0){
+    payerBarsEl.innerHTML = '<div class="empty">尚無支出紀錄</div>';
+  } else {
+    payerBarsEl.innerHTML = `
+      <div class="cat-bar">
+        <div class="top"><span>你先付</span><span>NT$ ${Math.round(payerTotals.me).toLocaleString()}</span></div>
+        <div class="track"><div class="fill" style="width:${(payerTotals.me/maxPayer*100).toFixed(0)}%"></div></div>
+      </div>
+      <div class="cat-bar">
+        <div class="top"><span>對方先付</span><span>NT$ ${Math.round(payerTotals.other).toLocaleString()}</span></div>
+        <div class="track"><div class="fill" style="width:${(payerTotals.other/maxPayer*100).toFixed(0)}%; background:var(--gold);"></div></div>
+      </div>
+    `;
+  }
 
   populateMonthFilter();
   const fMonth = $('filterMonth').value;
@@ -618,8 +696,8 @@ function render(){
       <div class="ledger-row">
         <div class="date">${d}</div>
         <div>
-          <div class="desc"><span class="who-badge">${x.kid}</span>${x.note || x.category}</div>
-          <div class="cat">${x.category}</div>
+          <div class="desc"><span class="who-badge">${escapeHtml(x.kid)}</span>${escapeHtml(x.note || x.category)}</div>
+          <div class="cat">${escapeHtml(x.category)}</div>
         </div>
         <div>
           <div class="amt">NT$ ${Math.round(x.amount).toLocaleString()}</div>
@@ -636,6 +714,7 @@ function render(){
 
 $('filterMonth').addEventListener('change', render);
 $('filterKid').addEventListener('change', render);
+$('filterPayerRange').addEventListener('change', render);
 </script>
 </body>
 </html>

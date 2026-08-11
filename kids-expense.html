@@ -118,6 +118,28 @@
   .sync-dot.error{ background:var(--stamp); }
   @keyframes pulse{ 50%{opacity:.3;} }
 
+  .backup-bar{
+    margin:8px 18px 0 34px; display:flex; gap:8px; align-items:center; flex-wrap:wrap;
+    font-size:11.5px; opacity:.6;
+  }
+  .backup-bar button{
+    border:1px solid var(--line); background:#fff; border-radius:7px; padding:6px 10px;
+    font-size:11.5px; cursor:pointer; color:var(--ink);
+  }
+  .backup-banner{
+    margin:12px 18px 0 34px; background:#fdf3dd; border:1px solid var(--gold); border-radius:10px;
+    padding:10px 14px; display:flex; align-items:center; gap:10px; font-size:12.5px; color:var(--ink);
+  }
+  .backup-banner .msg{ flex:1; }
+  .backup-banner button.backup-now{
+    background:var(--gold); color:#fff; border:none; border-radius:7px;
+    padding:6px 12px; font-size:12px; cursor:pointer; font-weight:700; white-space:nowrap;
+  }
+  .backup-banner button.dismiss{
+    background:none; border:none; color:var(--ink); opacity:.5; font-size:15px;
+    cursor:pointer; padding:0 2px; line-height:1;
+  }
+
   section{ padding:18px 18px 0 34px; }
   h2{
     font-size:13px; letter-spacing:.08em; text-transform:uppercase;
@@ -252,6 +274,19 @@
       <div class="sync-dot" id="syncDot"></div>
       <span id="syncText">已同步</span>
       <button id="btnRefresh">重新整理</button>
+    </div>
+
+    <div class="backup-banner hidden" id="backupBanner">
+      <span class="msg" id="backupBannerText"></span>
+      <button class="backup-now" id="btnBannerBackup">立即備份</button>
+      <button class="dismiss" id="btnBannerDismiss" aria-label="關閉提醒">✕</button>
+    </div>
+
+    <div class="backup-bar">
+      <span id="backupStatusText">尚未備份過</span>
+      <button id="btnExportBackup">匯出備份</button>
+      <button id="btnImportBackup">匯入備份</button>
+      <input type="file" id="importFileInput" accept="application/json" class="hidden">
     </div>
 
     <section>
@@ -391,6 +426,87 @@ function populateCategorySelect(selected){
     + `<option value="${ADD_CATEGORY_VALUE}">➕ 新增類別...</option>`;
   sel.value = cats.includes(selected) ? selected : cats[0];
 }
+
+const BACKUP_REMINDER_DAYS = 7;
+let backupBannerDismissed = false;
+
+function exportBackup(){
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `kids-expense-backup-${new Date().toISOString().slice(0,10)}.json`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+  data.settings.lastBackupAt = new Date().toISOString();
+  pushLedger();
+  checkBackupReminder();
+}
+
+function importBackup(file){
+  const reader = new FileReader();
+  reader.onload = async () => {
+    let parsed;
+    try{
+      parsed = JSON.parse(reader.result);
+    }catch(e){
+      alert('備份檔案格式錯誤，無法匯入');
+      return;
+    }
+    if(!parsed || typeof parsed !== 'object' || !Array.isArray(parsed.expenses) || !parsed.settings){
+      alert('這不是有效的備份檔案');
+      return;
+    }
+    if(!confirm('匯入備份會覆蓋目前雙方共用的帳本資料，確定要匯入嗎？')) return;
+    data = parsed;
+    ensureCategories(data);
+    populateCategorySelect(data.settings.categories[0]);
+    $('ratioMe').value = data.settings.ratioMe;
+    $('ratioOther').value = data.settings.ratioOther;
+    await pushLedger();
+    render();
+  };
+  reader.readAsText(file);
+}
+
+function checkBackupReminder(){
+  const last = data.settings.lastBackupAt;
+  $('backupStatusText').textContent = last ? `上次備份：${last.slice(0,10)}` : '尚未備份過';
+
+  if(backupBannerDismissed){ $('backupBanner').classList.add('hidden'); return; }
+
+  let overdue, daysSince;
+  if(!last){
+    overdue = data.expenses.length >= 3;
+  } else {
+    daysSince = Math.floor((Date.now() - new Date(last).getTime()) / 86400000);
+    overdue = daysSince >= BACKUP_REMINDER_DAYS;
+  }
+
+  if(overdue){
+    $('backupBannerText').textContent = last
+      ? `距離上次備份已經 ${daysSince} 天，建議匯出一份備份`
+      : '你已經記了一些支出，建議先匯出一份備份';
+    $('backupBanner').classList.remove('hidden');
+  } else {
+    $('backupBanner').classList.add('hidden');
+  }
+}
+
+$('btnExportBackup').addEventListener('click', exportBackup);
+$('btnBannerBackup').addEventListener('click', exportBackup);
+$('btnBannerDismiss').addEventListener('click', ()=>{
+  backupBannerDismissed = true;
+  $('backupBanner').classList.add('hidden');
+});
+$('btnImportBackup').addEventListener('click', ()=> $('importFileInput').click());
+$('importFileInput').addEventListener('change', e=>{
+  const file = e.target.files[0];
+  if(file) importBackup(file);
+  e.target.value = '';
+});
 
 $('fCategory').addEventListener('change', async e=>{
   if(e.target.value !== ADD_CATEGORY_VALUE) return;
@@ -722,6 +838,8 @@ function render(){
       btn.addEventListener('click', ()=>deleteExpense(btn.dataset.id));
     });
   }
+
+  checkBackupReminder();
 }
 
 $('filterMonth').addEventListener('change', render);

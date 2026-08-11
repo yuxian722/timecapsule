@@ -227,7 +227,7 @@
     <div class="setup-card">
       <h3>加入對方的帳本</h3>
       <p>如果對方已經建立好帳本，把對方傳給你的代碼貼在下面。</p>
-      <input type="text" id="joinCode" placeholder="貼上帳本代碼">
+      <input type="text" id="joinCode" placeholder="貼上帳本代碼" autocapitalize="off" autocorrect="off" spellcheck="false">
       <button id="btnJoin" class="secondary">加入帳本</button>
     </div>
     <div class="setup-status" id="setupStatus"></div>
@@ -454,8 +454,20 @@ async function createLedger(){
   }
 }
 
+function extractLedgerCode(raw){
+  let code = raw.trim();
+  try{
+    if(/^https?:\/\//i.test(code)){
+      const u = new URL(code);
+      const fromParam = u.searchParams.get('ledger');
+      code = fromParam || u.pathname.split('/').filter(Boolean).pop() || code;
+    }
+  }catch(e){ /* not a URL, use as-is */ }
+  return code.trim();
+}
+
 async function joinLedger(){
-  const code = $('joinCode').value.trim();
+  const code = extractLedgerCode($('joinCode').value);
   if(!code){ return; }
   $('setupStatus').textContent = '加入中…';
   $('setupStatus').className = 'setup-status';

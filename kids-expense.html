@@ -174,16 +174,68 @@
   button.submit:active{ opacity:.85; }
   button.submit:disabled{ opacity:.5; }
 
+  .receipt-row{ display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+  .receipt-row button{
+    border:1px solid var(--line); background:#fff; border-radius:7px; padding:8px 12px;
+    font-size:12.5px; cursor:pointer; color:var(--ink);
+  }
+  .receipt-preview{
+    width:44px; height:44px; object-fit:cover; border-radius:6px; border:1px solid var(--line);
+  }
+
+  .calc-overlay{
+    position:fixed; inset:0; background:rgba(28,43,46,.55); z-index:100;
+    display:flex; align-items:flex-end; justify-content:center;
+  }
+  .calc-sheet{
+    width:100%; max-width:520px; background:var(--paper); border-radius:16px 16px 0 0;
+    padding:16px 16px 22px; box-shadow:0 -4px 24px rgba(0,0,0,.2);
+  }
+  .calc-top{
+    display:flex; justify-content:space-between; align-items:center;
+    font-size:12px; opacity:.6; margin-bottom:8px;
+  }
+  .calc-top button{ background:none; border:none; font-size:16px; opacity:.6; cursor:pointer; padding:2px 6px; }
+  .calc-display{
+    background:var(--card); border:1px solid var(--line); border-radius:10px;
+    padding:16px; text-align:right; font-size:26px; font-weight:800; font-variant-numeric:tabular-nums;
+    margin-bottom:12px; overflow-x:auto; white-space:nowrap;
+  }
+  .calc-grid{ display:grid; grid-template-columns:repeat(4, 1fr); gap:8px; }
+  .calc-grid button{
+    padding:16px 0; border:1px solid var(--line); border-radius:10px; background:#fff;
+    font-size:18px; cursor:pointer; color:var(--ink); font-weight:600;
+  }
+  .calc-grid button.op{ background:#efe7d4; }
+  .calc-grid button.wide{ grid-column:span 2; }
+  .calc-grid button.primary{ background:var(--mint-deep); color:#fff; border-color:var(--mint-deep); }
+  .calc-grid button:active{ opacity:.8; }
+
+  .lightbox{
+    position:fixed; inset:0; background:rgba(0,0,0,.85); z-index:100;
+    display:flex; align-items:center; justify-content:center; padding:20px;
+  }
+  .lightbox-inner{ max-width:100%; max-height:100%; text-align:center; }
+  .lightbox-inner img{ max-width:100%; max-height:80vh; border-radius:8px; }
+  .lightbox-inner button{
+    margin-top:14px; border:none; background:#fff; color:var(--ink);
+    border-radius:8px; padding:10px 20px; font-size:14px; cursor:pointer; font-weight:600;
+  }
+
   .filters{ display:flex; gap:8px; margin-bottom:10px; }
   .filters select{ font-size:13px; padding:7px 8px; }
 
   .ledger{ display:flex; flex-direction:column; gap:0; }
+  .ledger-date-header{
+    display:flex; justify-content:space-between; align-items:baseline;
+    padding:14px 4px 6px; font-size:12px; font-weight:700; color:var(--mint-deep); opacity:.85;
+  }
+  .ledger-date-header .sub{ font-size:11px; font-weight:600; opacity:.7; }
   .ledger-row{
-    display:grid; grid-template-columns: 54px 1fr auto;
+    display:grid; grid-template-columns: 1fr auto;
     gap:10px; align-items:center;
     padding:12px 4px; border-bottom:1px dashed var(--line);
   }
-  .ledger-row .date{ font-size:11px; opacity:.55; line-height:1.3; }
   .ledger-row .who-badge{
     display:inline-block; font-size:10px; padding:1px 6px; border-radius:4px;
     background:var(--mint); color:#fff; margin-right:6px; opacity:.85;
@@ -192,6 +244,11 @@
   .ledger-row .cat{ font-size:11.5px; opacity:.55; margin-top:1px;}
   .ledger-row .amt{ font-size:15px; font-weight:700; font-variant-numeric:tabular-nums; text-align:right;}
   .ledger-row .payer{ font-size:10.5px; opacity:.5; text-align:right; margin-top:2px;}
+  .ledger-row .row-actions{ display:flex; align-items:center; gap:6px; justify-content:flex-end; margin-top:2px; }
+  .ledger-row .receipt-badge{
+    background:none; border:1px solid var(--line); border-radius:5px; font-size:11px; opacity:.7;
+    padding:1px 5px; cursor:pointer;
+  }
   .ledger-row .del{
     background:none; border:none; color:var(--stamp); font-size:11px; opacity:.5;
     padding:2px 4px; cursor:pointer;
@@ -327,7 +384,7 @@
           </div>
           <div>
             <label>金額 (NT$)</label>
-            <input type="number" id="fAmount" inputmode="numeric" placeholder="0" required>
+            <input type="text" id="fAmount" inputmode="none" placeholder="0" required>
           </div>
         </div>
 
@@ -346,8 +403,23 @@
         </div>
 
         <div>
+          <label>帳戶</label>
+          <select id="fAccount"></select>
+        </div>
+
+        <div>
           <label>備註（選填）</label>
           <input type="text" id="fNote" placeholder="例如：3月份費用">
+        </div>
+
+        <div>
+          <label>收據照片（選填）</label>
+          <div class="receipt-row">
+            <input type="file" id="fReceiptInput" accept="image/*" capture="environment" class="hidden">
+            <button type="button" id="btnAddReceipt">📷 拍照/選擇照片</button>
+            <img id="receiptPreview" class="receipt-preview hidden" alt="收據預覽">
+            <button type="button" id="btnRemoveReceipt" class="hidden">移除</button>
+          </div>
         </div>
 
         <div>
@@ -438,6 +510,30 @@
   <footer>資料儲存於雲端，雙方輸入相同代碼即可共用同一份紀錄</footer>
 </div>
 
+<div class="calc-overlay hidden" id="calcOverlay">
+  <div class="calc-sheet">
+    <div class="calc-top">
+      <span>輸入金額</span>
+      <button type="button" id="btnCalcClose" aria-label="關閉">✕</button>
+    </div>
+    <div class="calc-display" id="calcDisplay">0</div>
+    <div class="calc-grid">
+      <button type="button" data-key="7">7</button><button type="button" data-key="8">8</button><button type="button" data-key="9">9</button><button type="button" class="op" data-key="÷">÷</button>
+      <button type="button" data-key="4">4</button><button type="button" data-key="5">5</button><button type="button" data-key="6">6</button><button type="button" class="op" data-key="×">×</button>
+      <button type="button" data-key="1">1</button><button type="button" data-key="2">2</button><button type="button" data-key="3">3</button><button type="button" class="op" data-key="-">−</button>
+      <button type="button" data-key="0">0</button><button type="button" data-key=".">.</button><button type="button" class="op" data-key="back">⌫</button><button type="button" class="op" data-key="+">＋</button>
+      <button type="button" class="wide" data-key="clear">清除</button><button type="button" class="wide primary" data-key="done">完成</button>
+    </div>
+  </div>
+</div>
+
+<div class="lightbox hidden" id="receiptLightbox">
+  <div class="lightbox-inner">
+    <img id="lightboxImg" alt="收據照片">
+    <button type="button" id="btnCloseLightbox">關閉</button>
+  </div>
+</div>
+
 <script>
 const FIREBASE_DB = 'https://fish-cost-account-default-rtdb.asia-southeast1.firebasedatabase.app';
 const DEFAULT_CATEGORIES = ['佳音補習班費用','肯塔基費用','大樹安親班費用','成大安親班費用','才藝班費用','健保費用','保險費用','醫療費用','電話費用','其他費用'];
@@ -495,6 +591,42 @@ function populateCategorySelect(selected){
     + `<option value="${ADD_CATEGORY_VALUE}">➕ 新增類別...</option>`;
   sel.value = cats.includes(selected) ? selected : cats[0];
 }
+
+const DEFAULT_ACCOUNTS = ['現金','信用卡'];
+const ADD_ACCOUNT_VALUE = '__add_account__';
+
+// Same pattern as ensureCategories: merge in any missing default accounts and
+// any account names already used on existing expenses (legacy data safety).
+function ensureAccounts(d){
+  if(!Array.isArray(d.settings.accounts)) d.settings.accounts = [];
+  let changed = d.settings.accounts.length === 0;
+  const has = a => d.settings.accounts.includes(a);
+  d.expenses.forEach(x=>{ if(x.account && !has(x.account)){ d.settings.accounts.push(x.account); changed = true; } });
+  DEFAULT_ACCOUNTS.forEach(a=>{ if(!has(a)){ d.settings.accounts.push(a); changed = true; } });
+  return changed;
+}
+
+function populateAccountSelect(selected){
+  const sel = $('fAccount');
+  const accs = data.settings.accounts;
+  sel.innerHTML = accs.map(a=>`<option value="${escapeHtml(a)}">${escapeHtml(a)}</option>`).join('')
+    + `<option value="${ADD_ACCOUNT_VALUE}">➕ 新增帳戶...</option>`;
+  sel.value = accs.includes(selected) ? selected : accs[0];
+}
+
+$('fAccount').addEventListener('change', async e=>{
+  if(e.target.value !== ADD_ACCOUNT_VALUE) return;
+  const name = (prompt('請輸入新的帳戶名稱') || '').trim();
+  if(name){
+    if(!data.settings.accounts.includes(name)){
+      data.settings.accounts.push(name);
+      await pushLedger();
+    }
+    populateAccountSelect(name);
+  } else {
+    populateAccountSelect(data.settings.accounts[0]);
+  }
+});
 
 const BACKUP_REMINDER_DAYS = 7;
 let backupBannerDismissed = false;
@@ -772,13 +904,16 @@ async function refreshFromServer(){
   try{
     const remote = await fetchLedger(ledgerId);
     const keepCategory = $('fCategory').value;
+    const keepAccount = $('fAccount').value;
     data = remote;
     const categoriesChanged = ensureCategories(data);
+    const accountsChanged = ensureAccounts(data);
     populateCategorySelect(keepCategory);
+    populateAccountSelect(keepAccount);
     populateSnapshotSelect();
     setSyncState('ok');
     render();
-    if(categoriesChanged) pushLedger();
+    if(categoriesChanged || accountsChanged) pushLedger();
     maybeSnapshotToday();
   }catch(e){
     setSyncState('error');
@@ -792,10 +927,12 @@ function enterApp(){
   $('ratioMe').value = data.settings.ratioMe;
   $('ratioOther').value = data.settings.ratioOther;
   const categoriesChanged = ensureCategories(data);
+  const accountsChanged = ensureAccounts(data);
   populateCategorySelect(data.settings.categories[0]);
+  populateAccountSelect(data.settings.accounts[0]);
   populateSnapshotSelect();
   render();
-  if(categoriesChanged) pushLedger();
+  if(categoriesChanged || accountsChanged) pushLedger();
   maybeSnapshotToday();
 }
 
@@ -849,26 +986,156 @@ setupChips('payerChips', v => selectedPayer = v);
 
 $('fDate').valueAsDate = new Date();
 
+// --- Receipt photo: compress client-side before storing inline in the ledger JSON,
+// since Firebase RTDB has no dedicated file storage and full-size photos would
+// bloat every sync. Capped small enough to stay a lightweight base64 string.
+let pendingReceiptDataUrl = null;
+
+function compressImage(file, maxDim, quality){
+  return new Promise((resolve, reject)=>{
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error('讀取照片失敗'));
+    reader.onload = e=>{
+      const img = new Image();
+      img.onerror = () => reject(new Error('讀取照片失敗'));
+      img.onload = ()=>{
+        let { width, height } = img;
+        if(width > height && width > maxDim){ height = Math.round(height * maxDim / width); width = maxDim; }
+        else if(height > maxDim){ width = Math.round(width * maxDim / height); height = maxDim; }
+        const canvas = document.createElement('canvas');
+        canvas.width = width; canvas.height = height;
+        canvas.getContext('2d').drawImage(img, 0, 0, width, height);
+        resolve(canvas.toDataURL('image/jpeg', quality));
+      };
+      img.src = e.target.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+function clearReceiptInput(){
+  pendingReceiptDataUrl = null;
+  $('fReceiptInput').value = '';
+  $('receiptPreview').classList.add('hidden');
+  $('receiptPreview').src = '';
+  $('btnRemoveReceipt').classList.add('hidden');
+}
+
+$('btnAddReceipt').addEventListener('click', ()=> $('fReceiptInput').click());
+$('fReceiptInput').addEventListener('change', async e=>{
+  const file = e.target.files[0];
+  if(!file) return;
+  try{
+    pendingReceiptDataUrl = await compressImage(file, 640, 0.6);
+    $('receiptPreview').src = pendingReceiptDataUrl;
+    $('receiptPreview').classList.remove('hidden');
+    $('btnRemoveReceipt').classList.remove('hidden');
+  }catch(err){
+    alert('照片處理失敗，請再試一次');
+    clearReceiptInput();
+  }
+});
+$('btnRemoveReceipt').addEventListener('click', clearReceiptInput);
+
+$('ledger').addEventListener('click', e=>{
+  const btn = e.target.closest('.receipt-badge');
+  if(!btn) return;
+  const expense = data.expenses.find(x=>x.id === btn.dataset.receiptId);
+  if(!expense || !expense.receiptPhoto) return;
+  $('lightboxImg').src = expense.receiptPhoto;
+  $('receiptLightbox').classList.remove('hidden');
+});
+$('btnCloseLightbox').addEventListener('click', ()=> $('receiptLightbox').classList.add('hidden'));
+$('receiptLightbox').addEventListener('click', e=>{
+  if(e.target === $('receiptLightbox')) $('receiptLightbox').classList.add('hidden');
+});
+
+// --- Calculator keypad for the amount field. Bound to 'click' (not 'focus') so
+// Playwright's page.fill()/programmatic value-setting in tests doesn't pop it open.
+let calcExpr = '';
+const CALC_OPS = ['+','-','×','÷'];
+
+function evalCalcExpression(expr){
+  const tokens = expr.match(/\d+\.?\d*|[+\-×÷]/g);
+  if(!tokens || !tokens.length) return NaN;
+  let result = parseFloat(tokens[0]);
+  if(isNaN(result)) return NaN;
+  for(let i=1; i<tokens.length; i+=2){
+    const op = tokens[i];
+    const next = parseFloat(tokens[i+1]);
+    if(op === undefined || isNaN(next)) break;
+    if(op === '+') result += next;
+    else if(op === '-') result -= next;
+    else if(op === '×') result *= next;
+    else if(op === '÷') result = next !== 0 ? result / next : result;
+  }
+  return result;
+}
+
+function updateCalcDisplay(){
+  $('calcDisplay').textContent = calcExpr || '0';
+}
+
+function openCalculator(){
+  const current = $('fAmount').value;
+  calcExpr = (current && current !== '0') ? current : '';
+  updateCalcDisplay();
+  $('calcOverlay').classList.remove('hidden');
+}
+
+$('fAmount').addEventListener('click', openCalculator);
+$('btnCalcClose').addEventListener('click', ()=> $('calcOverlay').classList.add('hidden'));
+
+$('calcOverlay').addEventListener('click', e=>{
+  if(e.target === $('calcOverlay')) return; // let backdrop clicks fall through without changing state
+  const btn = e.target.closest('button[data-key]');
+  if(!btn) return;
+  const key = btn.dataset.key;
+
+  if(key === 'clear'){
+    calcExpr = '';
+  } else if(key === 'back'){
+    calcExpr = calcExpr.slice(0, -1);
+  } else if(key === 'done'){
+    const val = evalCalcExpression(calcExpr);
+    $('fAmount').value = isNaN(val) ? '' : (Math.round(val * 100) / 100).toString();
+    $('calcOverlay').classList.add('hidden');
+    return;
+  } else if(CALC_OPS.includes(key)){
+    if(calcExpr === '') return;
+    const lastChar = calcExpr.slice(-1);
+    calcExpr = CALC_OPS.includes(lastChar) ? calcExpr.slice(0, -1) + key : calcExpr + key;
+  } else {
+    calcExpr += key;
+  }
+  updateCalcDisplay();
+});
+
 $('entryForm').addEventListener('submit', async e=>{
   e.preventDefault();
   const amount = parseFloat($('fAmount').value);
   if(!amount || amount <= 0) return;
   if($('fCategory').value === ADD_CATEGORY_VALUE) return;
+  if($('fAccount').value === ADD_ACCOUNT_VALUE) return;
   $('btnSubmit').disabled = true;
-  data.expenses.push({
+  const entry = {
     id: Date.now().toString(36) + Math.random().toString(36).slice(2,6),
     date: $('fDate').value,
     amount,
     kid: selectedKid,
     category: $('fCategory').value,
+    account: $('fAccount').value,
     note: $('fNote').value.trim(),
     payer: selectedPayer
-  });
+  };
+  if(pendingReceiptDataUrl) entry.receiptPhoto = pendingReceiptDataUrl;
+  data.expenses.push(entry);
   await pushLedger();
   $('btnSubmit').disabled = false;
   $('fAmount').value = '';
   $('fNote').value = '';
   $('fDate').valueAsDate = new Date();
+  clearReceiptInput();
   render();
 });
 
@@ -890,6 +1157,13 @@ async function deleteExpense(id){
 }
 
 function monthKey(dateStr){ return dateStr ? dateStr.slice(0,7) : ''; }
+
+function formatDateHeader(dateStr){
+  const d = new Date(dateStr + 'T00:00:00');
+  if(isNaN(d.getTime())) return dateStr;
+  const weekday = ['週日','週一','週二','週三','週四','週五','週六'][d.getDay()];
+  return `${d.getMonth()+1}月${d.getDate()}日${weekday}`;
+}
 
 function computeBalance(){
   const total = data.settings.ratioMe + data.settings.ratioOther;
@@ -1034,21 +1308,38 @@ function render(){
   if(list.length === 0){
     ledgerEl.innerHTML = '<div class="empty">尚無符合條件的紀錄</div>';
   } else {
-    ledgerEl.innerHTML = list.map(x=>{
-      const d = x.date ? x.date.slice(5).replace('-','/') : '';
+    const groups = [];
+    list.forEach(x=>{
+      if(!groups.length || groups[groups.length-1].date !== x.date){
+        groups.push({ date: x.date, items: [] });
+      }
+      groups[groups.length-1].items.push(x);
+    });
+
+    ledgerEl.innerHTML = groups.map(g=>{
+      const subtotal = g.items.reduce((s,x)=>s+x.amount,0);
+      const rows = g.items.map(x=>`
+        <div class="ledger-row">
+          <div>
+            <div class="desc"><span class="who-badge">${escapeHtml(x.kid)}</span>${escapeHtml(x.note || x.category)}</div>
+            <div class="cat">${escapeHtml(x.category)}${x.account ? ' · ' + escapeHtml(x.account) : ''}</div>
+          </div>
+          <div>
+            <div class="amt">NT$ ${Math.round(x.amount).toLocaleString()}</div>
+            <div class="row-actions">
+              <span class="payer">${x.payer === 'me' ? '你先付' : '對方先付'}</span>
+              ${x.receiptPhoto ? `<button class="receipt-badge" data-receipt-id="${x.id}">📷</button>` : ''}
+              <button class="del" data-id="${x.id}">刪除</button>
+            </div>
+          </div>
+        </div>`).join('');
       return `
-      <div class="ledger-row">
-        <div class="date">${d}</div>
-        <div>
-          <div class="desc"><span class="who-badge">${escapeHtml(x.kid)}</span>${escapeHtml(x.note || x.category)}</div>
-          <div class="cat">${escapeHtml(x.category)}</div>
+        <div class="ledger-date-header">
+          <span>${formatDateHeader(g.date)}</span>
+          <span class="sub">支出：NT$ ${Math.round(subtotal).toLocaleString()}</span>
         </div>
-        <div>
-          <div class="amt">NT$ ${Math.round(x.amount).toLocaleString()}</div>
-          <div class="payer">${x.payer === 'me' ? '你先付' : '對方先付'}</div>
-          <button class="del" data-id="${x.id}">刪除</button>
-        </div>
-      </div>`;
+        ${rows}
+      `;
     }).join('');
     ledgerEl.querySelectorAll('.del').forEach(btn=>{
       btn.addEventListener('click', ()=>deleteExpense(btn.dataset.id));

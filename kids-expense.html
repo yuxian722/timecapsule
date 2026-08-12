@@ -212,6 +212,24 @@
   .cat-bar .track{ height:8px; background:#e9e2cf; border-radius:4px; overflow:hidden; }
   .cat-bar .fill{ height:100%; background:var(--mint); border-radius:4px; }
 
+  .kid-donut-wrap{
+    background:var(--card); border:1px solid var(--line); border-radius:10px; padding:16px;
+    margin-bottom:16px; display:flex; gap:18px; align-items:center;
+  }
+  .kid-donut{
+    width:110px; height:110px; border-radius:50%; flex-shrink:0; position:relative;
+    background:#e9e2cf;
+  }
+  .kid-donut::after{
+    content:""; position:absolute; inset:18px; border-radius:50%; background:var(--card);
+  }
+  .kid-legend{ flex:1; display:flex; flex-direction:column; gap:9px; font-size:12.5px; min-width:0; }
+  .kid-legend .row{ display:flex; align-items:center; gap:8px; }
+  .kid-legend .dot{ width:10px; height:10px; border-radius:50%; flex-shrink:0; }
+  .kid-legend .name{ display:flex; align-items:center; gap:6px; flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .kid-legend .amt{ font-variant-numeric:tabular-nums; font-weight:700; white-space:nowrap; }
+  .kid-legend .pct{ opacity:.55; font-size:11px; width:40px; text-align:right; flex-shrink:0; }
+
   .share-box{
     background:var(--card); border:1px solid var(--line); border-radius:10px;
     padding:14px 16px; margin:0 18px 18px 34px; font-size:12.5px;
@@ -382,6 +400,20 @@
     </section>
 
     <section>
+      <h2>支出分析</h2>
+      <div class="filters">
+        <select id="filterKidRange">
+          <option value="month">本月</option>
+          <option value="all">全部時間</option>
+        </select>
+      </div>
+      <div class="kid-donut-wrap">
+        <div class="kid-donut" id="kidDonut"></div>
+        <div class="kid-legend" id="kidLegend"></div>
+      </div>
+    </section>
+
+    <section>
       <h2>明細</h2>
       <div class="filters">
         <select id="filterMonth"></select>
@@ -408,7 +440,9 @@
 
 <script>
 const FIREBASE_DB = 'https://fish-cost-account-default-rtdb.asia-southeast1.firebasedatabase.app';
-const DEFAULT_CATEGORIES = ['住音補習班','成大補習班','大樹安親班','才藝班','健保費用','保險費用','醫療費用','電話費用','肯塔基','其他費用'];
+const DEFAULT_CATEGORIES = ['佳音補習班費用','肯塔基費用','大樹安親班費用','成大安親班費用','才藝班費用','健保費用','保險費用','醫療費用','電話費用','其他費用'];
+// Earlier mistyped/shorthand category names, corrected to match the family's real record-keeping.
+const CATEGORY_RENAMES = { '住音補習班':'佳音補習班費用', '成大補習班':'成大安親班費用', '大樹安親班':'大樹安親班費用', '肯塔基':'肯塔基費用' };
 const ADD_CATEGORY_VALUE = '__add__';
 let ledgerId = null;
 let data = { settings: { ratioMe: 2, ratioOther: 1, categories: [...DEFAULT_CATEGORIES] }, expenses: [] };
@@ -418,12 +452,37 @@ let selectedPayer = 'me';
 const $ = id => document.getElementById(id);
 const escapeHtml = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
+// Firebase Realtime Database silently drops empty arrays/objects (a PUT/PATCH of
+// [] or {} deletes the path instead of storing it), so a brand-new ledger's
+// expenses:[] never round-trips through a GET. Normalize on every load so the
+// rest of the app can always assume these fields exist.
+function normalizeLedger(d){
+  if(!d || typeof d !== 'object') d = {};
+  if(!d.settings || typeof d.settings !== 'object') d.settings = {};
+  if(typeof d.settings.ratioMe !== 'number') d.settings.ratioMe = 2;
+  if(typeof d.settings.ratioOther !== 'number') d.settings.ratioOther = 1;
+  if(!Array.isArray(d.expenses)) d.expenses = [];
+  if(!d.backups || typeof d.backups !== 'object') d.backups = {};
+  return d;
+}
+
 // Merge in any missing default/legacy categories so custom additions (and future
-// built-in categories added to DEFAULT_CATEGORIES) survive app updates and reloads.
+// built-in categories added to DEFAULT_CATEGORIES) survive app updates and reloads,
+// and rename any old mistyped category names to their corrected form.
 function ensureCategories(d){
   if(!Array.isArray(d.settings.categories)) d.settings.categories = [];
   let changed = d.settings.categories.length === 0;
   const has = c => d.settings.categories.includes(c);
+
+  d.settings.categories = d.settings.categories.map(c=>{
+    if(CATEGORY_RENAMES[c]){ changed = true; return CATEGORY_RENAMES[c]; }
+    return c;
+  });
+  d.settings.categories = [...new Set(d.settings.categories)];
+  d.expenses.forEach(x=>{
+    if(x.category && CATEGORY_RENAMES[x.category]){ x.category = CATEGORY_RENAMES[x.category]; changed = true; }
+  });
+
   d.expenses.forEach(x=>{ if(x.category && !has(x.category)){ d.settings.categories.push(x.category); changed = true; } });
   DEFAULT_CATEGORIES.forEach(c=>{ if(!has(c)){ d.settings.categories.push(c); changed = true; } });
   return changed;
@@ -639,7 +698,7 @@ async function fetchLedger(id){
   if(!res.ok) throw new Error('找不到這個帳本代碼');
   const json = await res.json();
   if(json === null) throw new Error('找不到這個帳本代碼');
-  return json;
+  return normalizeLedger(json);
 }
 
 async function pushLedger(){
@@ -846,6 +905,49 @@ function computeBalance(){
   return net;
 }
 
+const KID_COLORS = { '喬安':'#3f6b5e', '依宸':'#b8863b', '共同':'#a13d2f' };
+
+function renderKidAnalysis(monthExpenses){
+  const range = $('filterKidRange').value;
+  const scope = range === 'all' ? data.expenses : monthExpenses;
+
+  const totals = { '喬安':0, '依宸':0, '共同':0 };
+  scope.forEach(x=>{ if(totals[x.kid] !== undefined) totals[x.kid] += x.amount; });
+  const grand = totals['喬安'] + totals['依宸'] + totals['共同'];
+
+  const donutEl = $('kidDonut');
+  const legendEl = $('kidLegend');
+
+  if(grand <= 0){
+    donutEl.style.background = '#e9e2cf';
+    legendEl.innerHTML = '<div class="empty">尚無支出紀錄</div>';
+    return;
+  }
+
+  let acc = 0;
+  const stops = Object.entries(totals).filter(([,amt])=>amt>0).map(([kid,amt])=>{
+    const start = acc / grand * 360;
+    acc += amt;
+    const end = acc / grand * 360;
+    return `${KID_COLORS[kid]} ${start.toFixed(2)}deg ${end.toFixed(2)}deg`;
+  });
+  donutEl.style.background = `conic-gradient(${stops.join(', ')})`;
+
+  legendEl.innerHTML = Object.entries(totals)
+    .filter(([,amt])=>amt>0)
+    .sort((a,b)=>b[1]-a[1])
+    .map(([kid,amt])=>{
+      const pct = (amt/grand*100).toFixed(1);
+      return `
+        <div class="row">
+          <div class="name"><span class="dot" style="background:${KID_COLORS[kid]}"></span>${escapeHtml(kid)}</div>
+          <div class="amt">NT$ ${Math.round(amt).toLocaleString()}</div>
+          <div class="pct">${pct}%</div>
+        </div>
+      `;
+    }).join('');
+}
+
 function populateMonthFilter(){
   const months = [...new Set(data.expenses.map(x=>monthKey(x.date)))].sort().reverse();
   const sel = $('filterMonth');
@@ -919,6 +1021,8 @@ function render(){
     `;
   }
 
+  renderKidAnalysis(monthExpenses);
+
   populateMonthFilter();
   const fMonth = $('filterMonth').value;
   const fKid = $('filterKid').value;
@@ -957,6 +1061,7 @@ function render(){
 $('filterMonth').addEventListener('change', render);
 $('filterKid').addEventListener('change', render);
 $('filterPayerRange').addEventListener('change', render);
+$('filterKidRange').addEventListener('change', render);
 </script>
 </body>
 </html>

@@ -128,6 +128,7 @@
   }
   .backup-bar select{ width:auto; font-size:11.5px; padding:5px 8px; }
   .backup-bar button:disabled{ opacity:.4; cursor:default; }
+  .backup-hint{ margin:4px 18px 0 34px; font-size:10.5px; opacity:.45; }
   .backup-banner{
     margin:12px 18px 0 34px; background:#fdf3dd; border:1px solid var(--gold); border-radius:10px;
     padding:10px 14px; display:flex; align-items:center; gap:10px; font-size:12.5px; color:var(--ink);
@@ -290,6 +291,7 @@
       <button id="btnImportBackup">匯入備份</button>
       <input type="file" id="importFileInput" accept="application/json" class="hidden">
     </div>
+    <div class="backup-hint">「匯出備份」可以直接選擇存到 Google 雲端硬碟或手機本機</div>
 
     <div class="backup-bar">
       <span>雲端每日快照</span>
@@ -438,16 +440,36 @@ function populateCategorySelect(selected){
 const BACKUP_REMINDER_DAYS = 7;
 let backupBannerDismissed = false;
 
-function exportBackup(){
+async function exportBackup(){
+  const filename = `kids-expense-backup-${new Date().toISOString().slice(0,10)}.json`;
   const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = `kids-expense-backup-${new Date().toISOString().slice(0,10)}.json`;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  URL.revokeObjectURL(url);
+  const file = new File([blob], filename, { type: 'application/json' });
+
+  let shared = false;
+  if(navigator.canShare && navigator.canShare({ files: [file] })){
+    try{
+      await navigator.share({ files: [file], title: filename });
+      shared = true;
+    }catch(e){
+      if(e && e.name === 'AbortError'){
+        // user cancelled the share sheet without picking a destination
+        return;
+      }
+      // fall through to plain download if share failed for another reason
+    }
+  }
+
+  if(!shared){
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  }
+
   data.settings.lastBackupAt = new Date().toISOString();
   pushLedger();
   checkBackupReminder();

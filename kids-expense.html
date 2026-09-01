@@ -104,6 +104,21 @@
     width:46px; padding:4px 6px; border:1px solid var(--line); border-radius:6px;
     font-size:12px; text-align:center; background:#fff;
   }
+  .settle-btn{
+    margin-top:12px; width:100%; padding:9px; border:1px solid var(--mint-deep); background:#fff;
+    color:var(--mint-deep); border-radius:8px; font-size:12.5px; font-weight:700; cursor:pointer;
+  }
+  .settle-history{ margin-top:10px; border-top:1px dashed var(--line); padding-top:10px; }
+  .settle-row{
+    display:flex; justify-content:space-between; align-items:center;
+    font-size:11.5px; padding:5px 0; gap:8px;
+  }
+  .settle-row .who{ opacity:.7; flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .settle-row .amt{ font-variant-numeric:tabular-nums; font-weight:700; white-space:nowrap; }
+  .settle-row .del{
+    background:none; border:none; color:var(--stamp); font-size:11px; opacity:.5;
+    padding:2px 4px; cursor:pointer;
+  }
 
   .sync-bar{
     margin:12px 18px 0 34px; display:flex; gap:8px; align-items:center;
@@ -187,6 +202,9 @@
     position:fixed; inset:0; background:rgba(28,43,46,.55); z-index:100;
     display:flex; align-items:flex-end; justify-content:center;
   }
+  /* The number keypad can be opened from within the settle sheet, so it must
+     always stack above it regardless of DOM order. */
+  #calcOverlay{ z-index:110; }
   .calc-sheet{
     width:100%; max-width:520px; background:var(--paper); border-radius:16px 16px 0 0;
     padding:16px 16px 22px; box-shadow:0 -4px 24px rgba(0,0,0,.2);
@@ -346,6 +364,8 @@
         ：對方
         <input type="number" id="ratioOther" value="1" min="0" max="10" step="1">
       </div>
+      <button type="button" id="btnOpenSettle" class="settle-btn">💰 記錄還款</button>
+      <div id="settleHistory" class="settle-history hidden"></div>
     </div>
 
     <div class="sync-bar">
@@ -527,6 +547,35 @@
   </div>
 </div>
 
+<div class="calc-overlay hidden" id="settleOverlay">
+  <div class="calc-sheet">
+    <div class="calc-top">
+      <span>記錄還款</span>
+      <button type="button" id="btnSettleClose" aria-label="關閉">✕</button>
+    </div>
+    <div style="margin-bottom:10px;">
+      <label>金額 (NT$)</label>
+      <input type="text" id="settleAmount" inputmode="none" placeholder="0">
+    </div>
+    <div style="margin-bottom:10px;">
+      <label>誰付款</label>
+      <div class="chip-row" id="settleChips">
+        <div class="chip active" data-val="other">對方付給你</div>
+        <div class="chip" data-val="me">你付給對方</div>
+      </div>
+    </div>
+    <div style="margin-bottom:10px;">
+      <label>日期</label>
+      <input type="date" id="settleDate">
+    </div>
+    <div style="margin-bottom:14px;">
+      <label>備註（選填）</label>
+      <input type="text" id="settleNote" placeholder="例如：LINE Pay 轉帳">
+    </div>
+    <button type="button" id="btnSettleSubmit" class="wide primary" style="width:100%; padding:12px; border:none; border-radius:8px; background:var(--mint-deep); color:#fff; font-size:15px; font-weight:700; cursor:pointer;">儲存還款紀錄</button>
+  </div>
+</div>
+
 <div class="lightbox hidden" id="receiptLightbox">
   <div class="lightbox-inner">
     <img id="lightboxImg" alt="收據照片">
@@ -541,7 +590,7 @@ const DEFAULT_CATEGORIES = ['佳音補習班費用','肯塔基費用','大樹安
 const CATEGORY_RENAMES = { '住音補習班':'佳音補習班費用', '成大補習班':'成大安親班費用', '大樹安親班':'大樹安親班費用', '肯塔基':'肯塔基費用' };
 const ADD_CATEGORY_VALUE = '__add__';
 let ledgerId = null;
-let data = { settings: { ratioMe: 2, ratioOther: 1, categories: [...DEFAULT_CATEGORIES] }, expenses: [] };
+let data = { settings: { ratioMe: 2, ratioOther: 1, categories: [...DEFAULT_CATEGORIES] }, expenses: [], settlements: [] };
 let selectedKid = '喬安';
 let selectedPayer = 'me';
 
@@ -558,6 +607,7 @@ function normalizeLedger(d){
   if(typeof d.settings.ratioMe !== 'number') d.settings.ratioMe = 2;
   if(typeof d.settings.ratioOther !== 'number') d.settings.ratioOther = 1;
   if(!Array.isArray(d.expenses)) d.expenses = [];
+  if(!Array.isArray(d.settlements)) d.settlements = [];
   if(!d.backups || typeof d.backups !== 'object') d.backups = {};
   return d;
 }
@@ -681,9 +731,11 @@ function importBackup(file){
       return;
     }
     if(!confirm('匯入備份會覆蓋目前雙方共用的帳本資料，確定要匯入嗎？')) return;
-    data = parsed;
+    data = normalizeLedger(parsed);
     ensureCategories(data);
+    ensureAccounts(data);
     populateCategorySelect(data.settings.categories[0]);
+    populateAccountSelect(data.settings.accounts[0]);
     $('ratioMe').value = data.settings.ratioMe;
     $('ratioOther').value = data.settings.ratioOther;
     await pushLedger();
@@ -741,7 +793,7 @@ async function maybeSnapshotToday(){
     await fetch(`${FIREBASE_DB}/ledgers/${ledgerId}/backups/${today}.json`, {
       method:'PUT',
       headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({ settings: data.settings, expenses: data.expenses, savedAt: new Date().toISOString() })
+      body: JSON.stringify({ settings: data.settings, expenses: data.expenses, settlements: data.settlements, savedAt: new Date().toISOString() })
     });
     if(!data.backups) data.backups = {};
     data.backups[today] = true;
@@ -783,8 +835,11 @@ async function restoreSnapshot(date){
     if(!snap) throw new Error('這個快照已經不存在');
     data.settings = snap.settings;
     data.expenses = snap.expenses;
+    data.settlements = Array.isArray(snap.settlements) ? snap.settlements : [];
     ensureCategories(data);
+    ensureAccounts(data);
     populateCategorySelect(data.settings.categories[0]);
+    populateAccountSelect(data.settings.accounts[0]);
     $('ratioMe').value = data.settings.ratioMe;
     $('ratioOther').value = data.settings.ratioOther;
     await pushLedger();
@@ -839,7 +894,7 @@ async function pushLedger(){
     const res = await fetch(`${FIREBASE_DB}/ledgers/${ledgerId}.json`, {
       method:'PATCH',
       headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({ settings: data.settings, expenses: data.expenses })
+      body: JSON.stringify({ settings: data.settings, expenses: data.expenses, settlements: data.settlements })
     });
     if(!res.ok) throw new Error('save failed');
     setSyncState('ok');
@@ -1050,9 +1105,11 @@ $('receiptLightbox').addEventListener('click', e=>{
   if(e.target === $('receiptLightbox')) $('receiptLightbox').classList.add('hidden');
 });
 
-// --- Calculator keypad for the amount field. Bound to 'click' (not 'focus') so
-// Playwright's page.fill()/programmatic value-setting in tests doesn't pop it open.
+// --- Calculator keypad, shared by the expense amount field and the settlement
+// amount field. Bound to 'click' (not 'focus') so Playwright's page.fill()/
+// programmatic value-setting in tests doesn't pop it open.
 let calcExpr = '';
+let calcTargetId = 'fAmount';
 const CALC_OPS = ['+','-','×','÷'];
 
 function evalCalcExpression(expr){
@@ -1076,14 +1133,15 @@ function updateCalcDisplay(){
   $('calcDisplay').textContent = calcExpr || '0';
 }
 
-function openCalculator(){
-  const current = $('fAmount').value;
+function openCalculator(targetId){
+  calcTargetId = targetId;
+  const current = $(targetId).value;
   calcExpr = (current && current !== '0') ? current : '';
   updateCalcDisplay();
   $('calcOverlay').classList.remove('hidden');
 }
 
-$('fAmount').addEventListener('click', openCalculator);
+$('fAmount').addEventListener('click', ()=> openCalculator('fAmount'));
 $('btnCalcClose').addEventListener('click', ()=> $('calcOverlay').classList.add('hidden'));
 
 $('calcOverlay').addEventListener('click', e=>{
@@ -1098,7 +1156,7 @@ $('calcOverlay').addEventListener('click', e=>{
     calcExpr = calcExpr.slice(0, -1);
   } else if(key === 'done'){
     const val = evalCalcExpression(calcExpr);
-    $('fAmount').value = isNaN(val) ? '' : (Math.round(val * 100) / 100).toString();
+    $(calcTargetId).value = isNaN(val) ? '' : (Math.round(val * 100) / 100).toString();
     $('calcOverlay').classList.add('hidden');
     return;
   } else if(CALC_OPS.includes(key)){
@@ -1156,6 +1214,71 @@ async function deleteExpense(id){
   render();
 }
 
+// --- Settlements: real-world repayments that close the gap the balance card
+// shows, independent of and on top of the ratio-based expense split above.
+let selectedSettleFrom = 'other';
+setupChips('settleChips', v => selectedSettleFrom = v);
+$('settleAmount').addEventListener('click', ()=> openCalculator('settleAmount'));
+
+$('btnOpenSettle').addEventListener('click', ()=>{
+  $('settleAmount').value = '';
+  $('settleNote').value = '';
+  $('settleDate').valueAsDate = new Date();
+  selectedSettleFrom = 'other';
+  $('settleChips').querySelectorAll('.chip').forEach(c=>c.classList.remove('active'));
+  $('settleChips').querySelector('[data-val="other"]').classList.add('active');
+  $('settleOverlay').classList.remove('hidden');
+});
+$('btnSettleClose').addEventListener('click', ()=> $('settleOverlay').classList.add('hidden'));
+$('settleOverlay').addEventListener('click', e=>{
+  if(e.target === $('settleOverlay')) $('settleOverlay').classList.add('hidden');
+});
+
+$('btnSettleSubmit').addEventListener('click', async ()=>{
+  const amount = parseFloat($('settleAmount').value);
+  if(!amount || amount <= 0) return;
+  data.settlements.push({
+    id: Date.now().toString(36) + Math.random().toString(36).slice(2,6),
+    date: $('settleDate').value || new Date().toISOString().slice(0,10),
+    amount,
+    from: selectedSettleFrom,
+    note: $('settleNote').value.trim()
+  });
+  await pushLedger();
+  $('settleOverlay').classList.add('hidden');
+  render();
+});
+
+async function deleteSettlement(id){
+  data.settlements = data.settlements.filter(s=>s.id !== id);
+  await pushLedger();
+  render();
+}
+
+function renderSettlements(){
+  const el = $('settleHistory');
+  if(!data.settlements.length){
+    el.classList.add('hidden');
+    el.innerHTML = '';
+    return;
+  }
+  el.classList.remove('hidden');
+  const list = [...data.settlements].sort((a,b)=> b.date.localeCompare(a.date) || b.id.localeCompare(a.id));
+  el.innerHTML = list.map(s=>{
+    const d = s.date ? s.date.slice(5).replace('-','/') : '';
+    const whoText = s.from === 'other' ? '對方付給你' : '你付給對方';
+    return `
+      <div class="settle-row">
+        <span class="who">${d}　${escapeHtml(whoText)}${s.note ? '　' + escapeHtml(s.note) : ''}</span>
+        <span class="amt">NT$ ${Math.round(s.amount).toLocaleString()}</span>
+        <button class="del" data-settle-id="${s.id}">刪除</button>
+      </div>`;
+  }).join('');
+  el.querySelectorAll('.del').forEach(btn=>{
+    btn.addEventListener('click', ()=>deleteSettlement(btn.dataset.settleId));
+  });
+}
+
 function monthKey(dateStr){ return dateStr ? dateStr.slice(0,7) : ''; }
 
 function formatDateHeader(dateStr){
@@ -1175,6 +1298,13 @@ function computeBalance(){
     const otherShare = x.amount - myShare;
     if(x.payer === 'me'){ net += otherShare; }
     else{ net -= myShare; }
+  });
+  // Settlements are actual repayments that close out the gap above, independent
+  // of the expense-sharing ratio: "對方付給你" reduces what they owe you,
+  // "你付給對方" reduces what you owe them (or adds to what they owe you back).
+  data.settlements.forEach(s=>{
+    if(s.from === 'other'){ net -= s.amount; }
+    else{ net += s.amount; }
   });
   return net;
 }
@@ -1253,6 +1383,8 @@ function render(){
     amtEl.textContent = 'NT$ ' + rounded.toLocaleString();
     whoEl.textContent = '你目前欠對方這個金額';
   }
+
+  renderSettlements();
 
   const thisMonth = new Date().toISOString().slice(0,7);
   const monthExpenses = data.expenses.filter(x=>monthKey(x.date) === thisMonth);
